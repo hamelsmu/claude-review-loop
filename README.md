@@ -30,26 +30,17 @@ After all agents finish, Codex deduplicates findings and writes a single consoli
 - `jq` — `brew install jq` (macOS) / `apt install jq` (Linux)
 - [Codex CLI](https://github.com/openai/codex) — `npm install -g @openai/codex`
 
-### Codex multi-agent setup (important)
+### Codex multi-agent setup (required)
 
-This plugin relies on Codex [multi-agent](https://developers.openai.com/codex/multi-agent/) to run parallel review agents (diff, holistic, Next.js, UX). Without this, Codex runs everything in a single agent — it still works, but you lose the parallelism.
+This plugin uses Codex [multi-agent](https://developers.openai.com/codex/multi-agent/) to run parallel review agents. The plugin will error if multi-agent is not enabled.
 
-Add this to your `~/.codex/config.toml`:
+**Easiest way:** Run `codex`, type `/experimental`, and enable **Multi-agents**.
+
+**Or** add to `~/.codex/config.toml`:
 
 ```toml
 [features]
 multi_agent = true
-```
-
-If you don't have a config file yet, create one:
-
-```bash
-mkdir -p ~/.codex
-cat >> ~/.codex/config.toml << 'EOF'
-
-[features]
-multi_agent = true
-EOF
 ```
 
 ## Installation
