@@ -2,8 +2,8 @@
 # Review Loop — Stop Hook
 #
 # Two-phase lifecycle:
-#   Phase 1 (task):       Claude finishes work → hook runs Codex multi-agent review → blocks exit
-#   Phase 2 (addressing): Claude addresses review → hook allows exit
+#   Phase 1 (task):       Claude finishes work → hook prepares Codex runner script → blocks exit
+#   Phase 2 (addressing): Claude runs Codex, addresses review → hook verifies review exists → allows exit
 #
 # On any error, default to allowing exit (never trap the user in a broken loop).
 #
@@ -11,14 +11,13 @@
 #   REVIEW_LOOP_CODEX_FLAGS  Override codex flags (default: --dangerously-bypass-approvals-and-sandbox)
 
 LOG_FILE=".claude/review-loop.log"
-LOCK_FILE=".claude/review-loop.lock"
 
 log() {
   mkdir -p "$(dirname "$LOG_FILE")"
   echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] $*" >> "$LOG_FILE"
 }
 
-trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f "$LOCK_FILE"; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
+trap 'log "ERROR: hook exited via ERR trap (line $LINENO)"; rm -f .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt; printf "{\"decision\":\"approve\"}\n"; exit 0' ERR
 
 # Consume stdin (hook input JSON) — must read to avoid broken pipe
 HOOK_INPUT=$(cat)
@@ -53,21 +52,6 @@ if ! echo "$REVIEW_ID" | grep -qE '^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$'; then
   rm -f "$STATE_FILE"
   printf '{"decision":"approve"}\n'
   exit 0
-fi
-
-# Re-entrancy guard: if another hook instance is already running Codex,
-# block exit with a "please wait" message instead of launching a second Codex.
-if [ -f "$LOCK_FILE" ]; then
-  LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
-  if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
-    log "SKIP: another hook is running Codex review (PID=$LOCK_PID)"
-    jq -n '{decision:"block", reason:"Codex review is still running. Please wait for it to complete."}' 2>/dev/null \
-      || printf '{"decision":"block","reason":"Codex review is still running. Please wait for it to complete."}\n'
-    exit 0
-  else
-    log "WARN: removing stale lock (PID=$LOCK_PID)"
-    rm -f "$LOCK_FILE"
-  fi
 fi
 
 # ── Project type detection ────────────────────────────────────────────────
@@ -397,16 +381,32 @@ Use your own judgment. Do not blindly accept every suggestion."
     ;;
 
   addressing)
-    # ── Phase 2 complete: Claude addressed the review. Allow exit. ───────
-    log "Review loop complete (review_id=$REVIEW_ID)"
-    rm -f "$STATE_FILE" "$LOCK_FILE" .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
-    printf '{"decision":"approve"}\n'
+    # ── Phase 2: verify review was actually produced before allowing exit ──
+    REVIEW_FILE="reviews/review-${REVIEW_ID}.md"
+    if [ ! -f "$REVIEW_FILE" ]; then
+      log "Review file not found ($REVIEW_FILE), Codex review not yet complete"
+      REASON="The Codex review has not been completed yet. Please run the review script:
+
+\`\`\`
+bash .claude/review-loop-run-codex.sh
+\`\`\`
+
+Then read ${REVIEW_FILE} and address the findings."
+      SYS_MSG="Review Loop [${REVIEW_ID}] — Codex review not yet complete"
+      jq -n --arg r "$REASON" --arg s "$SYS_MSG" \
+        '{decision:"block", reason:$r, systemMessage:$s}' 2>/dev/null \
+        || printf '{"decision":"block","reason":"Codex review not yet complete. Run: bash .claude/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$SYS_MSG"
+    else
+      log "Review loop complete (review_id=$REVIEW_ID)"
+      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+      printf '{"decision":"approve"}\n'
+    fi
     ;;
 
   *)
     # Unknown phase — clean up and allow exit
     log "WARN: unknown phase '$PHASE', cleaning up"
-    rm -f "$STATE_FILE" "$LOCK_FILE" .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+    rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
     printf '{"decision":"approve"}\n'
     ;;
 esac
