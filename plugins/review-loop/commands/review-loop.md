@@ -29,10 +29,12 @@ echo "Review Loop activated (ID: ${REVIEW_ID})"
 After setup completes successfully, proceed to implement the task described in the arguments. Work thoroughly and completely — write clean, well-structured, well-tested code.
 
 When you believe the task is fully done, stop. The review loop stop hook will automatically:
-1. Run Codex for an independent code review
-2. Present the review for you to address
+1. Prepare a Codex runner script and prompt file
+2. Block your exit with instructions to run the review
+
+You will then run `bash .claude/review-loop-run-codex.sh` to execute the Codex review (output streams to the user for visibility). After Codex finishes, read the review file and address the findings.
 
 RULES:
 - Complete the task to the best of your ability before stopping
 - Do not stop prematurely or skip parts of the task
-- The review loop handles the rest automatically
+- When blocked by the hook, run the Codex script as instructed and address the review

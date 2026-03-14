@@ -399,14 +399,14 @@ Use your own judgment. Do not blindly accept every suggestion."
   addressing)
     # ── Phase 2 complete: Claude addressed the review. Allow exit. ───────
     log "Review loop complete (review_id=$REVIEW_ID)"
-    rm -f "$STATE_FILE" "$LOCK_FILE"
+    rm -f "$STATE_FILE" "$LOCK_FILE" .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
     printf '{"decision":"approve"}\n'
     ;;
 
   *)
     # Unknown phase — clean up and allow exit
     log "WARN: unknown phase '$PHASE', cleaning up"
-    rm -f "$STATE_FILE" "$LOCK_FILE"
+    rm -f "$STATE_FILE" "$LOCK_FILE" .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
     printf '{"decision":"approve"}\n'
     ;;
 esac
