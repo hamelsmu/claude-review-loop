@@ -349,9 +349,13 @@ exit \$CODEX_EXIT
 RUNNER_EOF
     chmod +x "$RUNNER_SCRIPT"
 
-    # Transition to addressing phase
+    # Transition to addressing phase — fail-open if this breaks, otherwise
+    # a failed transition leaves phase=task and the next stop re-runs everything.
     if ! transition_phase "addressing"; then
-      log "ERROR: phase transition failed"
+      log "ERROR: phase transition failed, cleaning up"
+      rm -f "$STATE_FILE" "$RUNNER_SCRIPT" "$PROMPT_FILE"
+      printf '{"decision":"approve"}\n'
+      exit 0
     fi
 
     log "Prepared Codex review for Claude to execute (review_id=$REVIEW_ID)"
@@ -383,7 +387,13 @@ Use your own judgment. Do not blindly accept every suggestion."
   addressing)
     # ── Phase 2: verify review was actually produced before allowing exit ──
     REVIEW_FILE="reviews/review-${REVIEW_ID}.md"
-    if [ ! -f "$REVIEW_FILE" ]; then
+    if [ -f "$REVIEW_FILE" ]; then
+      # Review exists — success
+      log "Review loop complete (review_id=$REVIEW_ID)"
+      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+      printf '{"decision":"approve"}\n'
+    elif [ -f ".claude/review-loop-run-codex.sh" ]; then
+      # Runner script exists but review doesn't — Claude needs to run it
       log "Review file not found ($REVIEW_FILE), Codex review not yet complete"
       REASON="The Codex review has not been completed yet. Please run the review script:
 
@@ -397,8 +407,9 @@ Then read ${REVIEW_FILE} and address the findings."
         '{decision:"block", reason:$r, systemMessage:$s}' 2>/dev/null \
         || printf '{"decision":"block","reason":"Codex review not yet complete. Run: bash .claude/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$SYS_MSG"
     else
-      log "Review loop complete (review_id=$REVIEW_ID)"
-      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+      # Neither review nor runner script — orphaned state, fail-open
+      log "ERROR: review file and runner script both missing, cleaning up (review_id=$REVIEW_ID)"
+      rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-codex-prompt.txt
       printf '{"decision":"approve"}\n'
     fi
     ;;
