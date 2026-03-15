@@ -336,11 +336,17 @@ Then run /review-loop again."
 LOG_FILE=".claude/review-loop.log"
 log() { echo "[\$(date -u +"%Y-%m-%dT%H:%M:%SZ")] \$*" >> "\$LOG_FILE"; }
 
+PROMPT_FILE=".claude/review-loop-codex-prompt.txt"
+if [ ! -f "\$PROMPT_FILE" ]; then
+  echo "ERROR: prompt file missing: \$PROMPT_FILE" >&2
+  exit 1
+fi
+
 log "Starting Codex multi-agent review"
 START_TIME=\$(date +%s)
 
 # shellcheck disable=SC2086
-codex ${CODEX_FLAGS} exec "\$(cat .claude/review-loop-codex-prompt.txt)" || CODEX_EXIT=\$?
+codex ${CODEX_FLAGS} exec "\$(cat "\$PROMPT_FILE")" || CODEX_EXIT=\$?
 CODEX_EXIT=\${CODEX_EXIT:-0}
 
 ELAPSED=\$(( \$(date +%s) - START_TIME ))
@@ -395,7 +401,7 @@ Use your own judgment. Do not blindly accept every suggestion."
     elif [ -f ".claude/review-loop-run-codex.sh" ]; then
       # Runner script exists but review doesn't — Claude needs to run it
       log "Review file not found ($REVIEW_FILE), Codex review not yet complete"
-      REASON="The Codex review has not been completed yet. Please run the review script:
+      REASON="The Codex review has not been completed yet. Please run the review script (use a 600000ms timeout since reviews can take several minutes):
 
 \`\`\`
 bash .claude/review-loop-run-codex.sh
