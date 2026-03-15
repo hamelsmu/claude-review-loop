@@ -407,24 +407,25 @@ Use your own judgment. Do not blindly accept every suggestion."
       fi
       RETRY_COUNT=$(( RETRY_COUNT + 1 ))
 
-      if [ "$RETRY_COUNT" -ge 3 ]; then
-        log "ERROR: Codex failed $RETRY_COUNT times without producing review, failing open (review_id=$REVIEW_ID)"
+      if [ "$RETRY_COUNT" -ge 2 ]; then
+        # Already told Claude to run the script once — Codex failed, don't retry
+        log "ERROR: Codex failed to produce review, failing open (review_id=$REVIEW_ID)"
         rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt "$RETRY_FILE"
         printf '{"decision":"approve"}\n'
       else
         echo "$RETRY_COUNT" > "$RETRY_FILE"
-        log "Review file not found ($REVIEW_FILE), retry $RETRY_COUNT/3"
-        REASON="The Codex review has not been completed yet (attempt $RETRY_COUNT/3). Please run the review script (use a 600000ms timeout since reviews can take several minutes):
+        log "Review file not found ($REVIEW_FILE), prompting Claude to run Codex"
+        REASON="The Codex review has not been completed yet. Please run the review script (use a 600000ms timeout since reviews can take several minutes):
 
 \`\`\`
 bash .claude/review-loop-run-codex.sh
 \`\`\`
 
 Then read ${REVIEW_FILE} and address the findings."
-        SYS_MSG="Review Loop [${REVIEW_ID}] — Codex review not yet complete (attempt $RETRY_COUNT/3)"
+        SYS_MSG="Review Loop [${REVIEW_ID}] — Codex review not yet complete"
         jq -n --arg r "$REASON" --arg s "$SYS_MSG" \
           '{decision:"block", reason:$r, systemMessage:$s}' 2>/dev/null \
-          || printf '{"decision":"block","reason":"Codex review not yet complete (attempt %s/3). Run: bash .claude/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$RETRY_COUNT" "$SYS_MSG"
+          || printf '{"decision":"block","reason":"Codex review not yet complete. Run: bash .claude/review-loop-run-codex.sh","systemMessage":"%s"}\n' "$SYS_MSG"
       fi
     else
       # Neither review nor runner script — orphaned state, fail-open
