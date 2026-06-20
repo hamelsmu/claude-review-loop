@@ -1,5 +1,4 @@
 {
-  "description": "Review loop stop hook: runs Codex review after task completion, then has Claude address feedback",
   "hooks": {
     "Stop": [
       {
