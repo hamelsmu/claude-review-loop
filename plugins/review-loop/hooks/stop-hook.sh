@@ -32,7 +32,15 @@ fi
 
 # Parse a field from the YAML frontmatter
 parse_field() {
-  sed -n "s/^${1}: *//p" "$STATE_FILE" | head -1
+  awk -v key="$1" '
+    NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; next }
+    in_fm && /^---[[:space:]]*$/ { exit }
+    in_fm && $0 ~ "^" key ":[[:space:]]*" {
+      sub("^" key ":[[:space:]]*", "")
+      print
+      exit
+    }
+  ' "$STATE_FILE"
 }
 
 ACTIVE=$(parse_field "active")
@@ -41,7 +49,7 @@ REVIEW_ID=$(parse_field "review_id")
 
 # Not active → clean up and exit
 if [ "$ACTIVE" != "true" ]; then
-  rm -f "$STATE_FILE"
+  rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
   printf '{"decision":"approve"}\n'
   exit 0
 fi
@@ -49,7 +57,7 @@ fi
 # Validate review_id format to prevent path traversal
 if ! echo "$REVIEW_ID" | grep -qE '^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$'; then
   log "ERROR: invalid review_id format: $REVIEW_ID"
-  rm -f "$STATE_FILE"
+  rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
   printf '{"decision":"approve"}\n'
   exit 0
 fi
@@ -260,12 +268,13 @@ transition_phase() {
   local new_phase="$1"
   local TEMP_FILE="${STATE_FILE}.tmp.$$"
 
-  # Rewrite: replace 'phase: <anything>' with 'phase: <new_phase>'
-  # Use awk for robustness — handles whitespace variants, no anchoring issues
-  awk -v np="$new_phase" '{
-    if ($0 ~ /^phase:/) { print "phase: " np }
-    else { print }
-  }' "$STATE_FILE" > "$TEMP_FILE"
+  # Rewrite: replace 'phase: <anything>' inside the YAML frontmatter only
+  awk -v np="$new_phase" '
+    NR == 1 && /^---[[:space:]]*$/ { in_fm = 1; print; next }
+    in_fm && /^---[[:space:]]*$/ { in_fm = 0; print; next }
+    in_fm && /^phase:[[:space:]]*/ { print "phase: " np; next }
+    { print }
+  ' "$STATE_FILE" > "$TEMP_FILE"
 
   mv "$TEMP_FILE" "$STATE_FILE"
 
@@ -359,7 +368,7 @@ RUNNER_EOF
     # a failed transition leaves phase=task and the next stop re-runs everything.
     if ! transition_phase "addressing"; then
       log "ERROR: phase transition failed, cleaning up"
-      rm -f "$STATE_FILE" "$RUNNER_SCRIPT" "$PROMPT_FILE"
+      rm -f "$STATE_FILE" .claude/review-loop.lock "$RUNNER_SCRIPT" "$PROMPT_FILE" .claude/review-loop-retries
       printf '{"decision":"approve"}\n'
       exit 0
     fi
@@ -438,7 +447,7 @@ Then read ${REVIEW_FILE} and address the findings."
   *)
     # Unknown phase — clean up and allow exit
     log "WARN: unknown phase '$PHASE', cleaning up"
-    rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+    rm -f "$STATE_FILE" .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
     printf '{"decision":"approve"}\n'
     ;;
 esac

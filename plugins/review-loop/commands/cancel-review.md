@@ -2,7 +2,7 @@
 description: "Cancel an active review loop"
 allowed-tools:
   - Bash(test -f .claude/review-loop.local.md *)
-  - Bash(rm -f .claude/review-loop.local.md .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt)
+  - Bash(rm -f .claude/review-loop.local.md .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries)
   - Read
 ---
 
@@ -17,7 +17,7 @@ If active, read `.claude/review-loop.local.md` to get the current phase and revi
 Then remove the state file, lock file, and any generated Codex files:
 
 ```bash
-rm -f .claude/review-loop.local.md .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt
+rm -f .claude/review-loop.local.md .claude/review-loop.lock .claude/review-loop-run-codex.sh .claude/review-loop-codex-prompt.txt .claude/review-loop-retries
 ```
 
 Report: "Review loop cancelled (was at phase: X, review ID: Y)"
